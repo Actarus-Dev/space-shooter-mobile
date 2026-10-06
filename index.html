@@ -1,1 +1,2081 @@
-@@PLACEHOLDER_INDEX_HTML@@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Space Shooter Mobile</title>
+<style>
+/* ============================================================
+   SECTION: HTML & CSS — Style global du jeu (version mobile)
+   ============================================================
+   Thème spatial sombre (#0A0E1A). Canvas interne 960x540,
+   redimensionné pour s'adapter à l'écran (portrait/landscape).
+   HUD au-dessus, contrôles tactiles (stick + boutons) en bas.
+   ============================================================ */
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html, body {
+  height:100%; width:100%;
+  background:#05070F;
+  color:#E6EEFF;
+  font-family:'Segoe UI', system-ui, -apple-system, Arial, sans-serif;
+  overflow:hidden;
+  touch-action:none;
+  overscroll-behavior:none;
+  position:fixed; inset:0;
+}
+#app {
+  position:fixed; inset:0;
+  display:flex; flex-direction:column;
+  background:#05070F;
+}
+#hud {
+  flex:0 0 auto;
+  height:40px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 14px;
+  background:linear-gradient(180deg, rgba(10,14,26,.95), rgba(10,14,26,.7));
+  font-size:14px;
+  letter-spacing:.5px;
+  z-index:20;
+  border-bottom:1px solid rgba(90,140,255,.25);
+  user-select:none;
+  -webkit-user-select:none;
+}
+#hud .hud-item { display:flex; align-items:center; gap:6px; }
+#hud .label { color:#7FA6FF; font-weight:600; text-transform:uppercase; font-size:10px; }
+#hud .val { color:#EAF2FF; font-weight:700; font-variant-numeric:tabular-nums; }
+#hud .lives { letter-spacing:2px; }
+
+#game-area {
+  position:relative;
+  flex:1 1 auto;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#05070F;
+  overflow:hidden;
+  min-height:0;
+}
+#wrap {
+  position:relative;
+  box-shadow:0 0 40px rgba(30,80,200,.25);
+  background:#0A0E1A;
+  overflow:hidden;
+  /* largeur/hauteur fixées en JS pour conserver le ratio 16:9 */
+}
+canvas { display:block; background:#0A0E1A; touch-action:none; }
+
+/* ---------- Contrôles tactiles ---------- */
+#controls {
+  position:absolute;
+  left:0; right:0; bottom:0;
+  height:180px;
+  pointer-events:none;
+  z-index:15;
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  padding:0 16px calc(14px + env(safe-area-inset-bottom, 0px));
+}
+.pad-side { display:flex; gap:14px; align-items:flex-end; pointer-events:none; }
+/* Stick virtuel */
+#stick-base {
+  width:128px; height:128px;
+  border-radius:50%;
+  background:radial-gradient(circle at center, rgba(30,45,90,.45), rgba(10,14,26,.6));
+  border:2px solid rgba(90,140,255,.35);
+  box-shadow:0 0 24px rgba(80,120,255,.2), inset 0 0 24px rgba(80,120,255,.15);
+  position:relative;
+  pointer-events:auto;
+  touch-action:none;
+}
+#stick-knob {
+  position:absolute; left:50%; top:50%;
+  width:56px; height:56px;
+  margin:-28px 0 0 -28px;
+  border-radius:50%;
+  background:radial-gradient(circle at 40% 35%, #B3E5FC, #4FC3F7 55%, #1E88E5);
+  border:2px solid rgba(255,255,255,.6);
+  box-shadow:0 4px 14px rgba(0,0,0,.5), 0 0 20px rgba(79,195,247,.5);
+  transition:transform .05s linear;
+}
+/* Boutons */
+.tbtn {
+  width:72px; height:72px;
+  border-radius:50%;
+  border:2px solid rgba(255,255,255,.5);
+  background:radial-gradient(circle at 40% 35%, rgba(255,255,255,.25), rgba(30,45,90,.65));
+  color:#EAF2FF;
+  font-weight:700;
+  font-size:13px;
+  letter-spacing:1px;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 6px 18px rgba(0,0,0,.45), inset 0 0 16px rgba(255,255,255,.08);
+  pointer-events:auto;
+  touch-action:none;
+  user-select:none; -webkit-user-select:none;
+  -webkit-touch-callout:none;
+}
+.tbtn.fire { background:radial-gradient(circle at 40% 35%, #FFCDD2, #EF5350 55%, #C62828); color:#fff; border-color:rgba(255,255,255,.7); }
+.tbtn.rapid { background:radial-gradient(circle at 40% 35%, #FFE082, #FF9800 55%, #E65100); color:#2b1a00; border-color:rgba(255,255,255,.6); }
+.tbtn.active {
+  transform:scale(.94);
+  box-shadow:0 2px 10px rgba(0,0,0,.5), inset 0 0 22px rgba(255,255,255,.25);
+}
+
+/* ---------- Overlays ---------- */
+.overlay {
+  position:absolute;
+  inset:0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:14px;
+  background:radial-gradient(ellipse at center, rgba(10,14,26,.82), rgba(5,7,15,.96));
+  z-index:25;
+  text-align:center;
+  padding:18px;
+  overflow-y:auto;
+}
+.overlay.hidden { display:none; }
+.overlay h1 {
+  font-size:clamp(28px, 7vw, 46px);
+  font-weight:800;
+  letter-spacing:3px;
+  background:linear-gradient(90deg,#4FC3F7,#B388FF,#FF80AB);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+  text-shadow:0 0 30px rgba(120,140,255,.35);
+}
+.overlay .sub { color:#9FB4E6; font-size:14px; max-width:520px; line-height:1.6; }
+.controls {
+  display:grid;
+  grid-template-columns:auto auto;
+  gap:6px 16px;
+  font-size:13px;
+  color:#C7D6FF;
+  background:rgba(30,45,90,.25);
+  border:1px solid rgba(90,140,255,.25);
+  padding:12px 18px;
+  border-radius:10px;
+  text-align:left;
+}
+.controls b { color:#FFD54F; font-weight:600; }
+button.play {
+  margin-top:4px;
+  font-size:18px;
+  font-weight:700;
+  letter-spacing:1px;
+  padding:14px 40px;
+  border:none;
+  border-radius:30px;
+  cursor:pointer;
+  color:#0A0E1A;
+  background:linear-gradient(135deg,#4FC3F7,#7C4DFF);
+  box-shadow:0 6px 24px rgba(80,120,255,.45);
+  transition:transform .08s ease, box-shadow .08s ease;
+  touch-action:manipulation;
+}
+button.play:active { transform:translateY(1px) scale(.98); }
+.badge {
+  font-size:11px;
+  color:#8FA8E8;
+  border:1px solid rgba(120,150,255,.3);
+  padding:3px 12px;
+  border-radius:20px;
+}
+/* Rotation suggestion (portrait) */
+#rotate-hint {
+  display:none;
+  position:fixed; inset:0;
+  z-index:50;
+  background:#05070F;
+  color:#EAF2FF;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:16px;
+  text-align:center;
+  padding:24px;
+}
+#rotate-hint .rot-icon { font-size:56px; animation:rot 1.6s ease-in-out infinite; }
+@keyframes rot { 0%{transform:rotate(0)} 50%{transform:rotate(90deg)} 100%{transform:rotate(0)} }
+
+/* Mode portrait : on masque le hint et on réduit le contrôles */
+@media (orientation:portrait) and (max-width: 820px) {
+  #rotate-hint { display:flex; }
+}
+/* Plein écran : s'assurer que le body remplit l'écran */
+:fullscreen #app, :-webkit-full-screen #app {
+  width:100vw; height:100vh;
+}
+</style>
+</head>
+<body>
+<div id="rotate-hint">
+  <div class="rot-icon">📱</div>
+  <h1 style="color:#EAF2FF; text-shadow:none; background:none;">Pivotez votre téléphone</h1>
+  <p style="color:#9FB4E6;">Jouez en mode paysage pour une meilleure expérience.</p>
+</div>
+<div id="app">
+  <div id="hud">
+    <div class="hud-item"><span class="label">Score</span><span class="val" id="hud-score">0</span></div>
+    <div class="hud-item"><span class="label">Niveau</span><span class="val" id="hud-level">1</span></div>
+    <div class="hud-item"><span class="label">Vies</span><span class="val lives" id="hud-lives">♥♥♥</span></div>
+  </div>
+  <div id="game-area">
+    <div id="wrap">
+      <canvas id="game" width="960" height="540"></canvas>
+
+      <div id="start-overlay" class="overlay">
+        <span class="badge">v10 mobile — 100% local, sans dépendances</span>
+        <h1>SPACE SHOOTER</h1>
+        <p class="sub">Pilotez votre vaisseau, éliminez les 16 types d'ennemis et vainquez
+        5 Boss aux designs uniques. La musique chiptune s'adapte au niveau.</p>
+        <div class="controls">
+          <span><b>Stick gauche</b></span><span>Déplacer le vaisseau</span>
+          <span><b>Bouton rouge</b></span><span>Tirer (maintenir)</span>
+          <span><b>Bouton orange</b></span><span>Tir rapide</span>
+          <span><b>Clavier</b></span><span>WASD + Espace + Maj (PC)</span>
+        </div>
+        <button class="play" id="btn-start">Jouer</button>
+      </div>
+
+      <div id="over-overlay" class="overlay hidden">
+        <h1>GAME OVER</h1>
+        <p class="sub" id="over-text">Votre vaisseau a été détruit.</p>
+        <button class="play" id="btn-restart">Rejouer</button>
+      </div>
+
+      <div id="win-overlay" class="overlay hidden">
+        <h1>VICTOIRE</h1>
+        <p class="sub" id="win-text">Vous avez vaincu le Drake of the Void !</p>
+        <button class="play" id="btn-again">Rejouer</button>
+      </div>
+    </div>
+
+    <div id="controls">
+      <div class="pad-side">
+        <div id="stick-base"><div id="stick-knob"></div></div>
+      </div>
+      <div class="pad-side">
+        <div class="tbtn rapid" id="btn-rapid">RAPID</div>
+        <div class="tbtn fire" id="btn-fire">FIRE</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+'use strict';
+
+// ============================================================
+// SECTION: Constantes & état du jeu
+// ============================================================
+// Toutes les constantes globales et l'état mutable du jeu vivent ici.
+// W/H = dimensions du canvas. L'axe X est horizontal (0 à gauche),
+// Y vertical (0 en haut). Le joueur est à gauche, les ennemis à droite.
+// ============================================================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width;   // 960
+const H = canvas.height;  // 540
+const TAU = Math.PI * 2;
+
+// Vitesse de base du vaisseau (px par frame) et délai de tir (frames).
+const PLAYER_SPEED = 4.6;
+const PLAYER_FIRE_DELAY = 9;      // ~1 tir / 9 frames  (≈6.7 tirs/s à 60fps)
+const RAPID_FIRE_DELAY = 4;       // tir rapide (Shift / RT) : quasi double cadence
+const INVINCIBILITY_FRAMES = 90;  // ~1.5s d'invincibilité après un coup reçu
+
+// État du jeu — tout est muté par les fonctions update()/reset().
+let state = {
+  running: false,
+  over: false,
+  victory: false,
+  score: 0,
+  lives: 3,
+  level: 1,
+  kills: 0,              // tués au niveau courant (20 => boss)
+  killsPerLevel: 20,
+  time: 0,               // compteur global de frames (animations, parallaxe)
+};
+
+// Entités — tableaux de particules/entités, gérés par push/forEach/filter.
+let player = null;
+let bullets = [];        // tirs du joueur (direction = -1, vers la droite)
+let enemyBullets = [];   // tirs ennemis (direction = +1, vers le joueur)
+let enemies = [];        // ennemis classiques (16 types)
+let boss = null;         // boss du niveau (un seul à la fois)
+let particles = [];      // particules d'explosion / traînée
+let powerups = [];       // bonus qui tombent (shield / rapid)
+let stars = [];          // fond étoilé en parallaxe (3 couches)
+
+// Effets temporaires du joueur
+let playerShield = 0;    // frames restantes de bouclier
+let playerRapid = 0;     // frames restantes de tir rapide
+
+// Timers de tir (frames)
+let playerFireTimer = 0;
+let enemyFireTimer = 0;  // utilisé par certains ennemis
+let bossFireTimer = 0;
+
+// ============================================================
+// SECTION: Types d'ennemis & Boss
+// ============================================================
+// 16 types d'ennemis, chacun avec ses propres dimensions, HP, score,
+// couleur, couleur d'accent, vitesse de projectile et poids de spawn
+// selon le niveau. Les types à ondule forte (frostWisp, voidEye,
+// lightningHornet) sont plus difficiles à toucher (sinus à grande amplitude).
+// ============================================================
+const ENEMY_TYPES = {
+  // --- Niveau 1 : créatures de magma / insectes ---
+  magmaDrone:   { w:50, h:36, hp:2, score:200, color:'#FF5722', accent:'#FFAB91', bulletSpeed:4,   weight:[3,2,2,1,1] },
+  emberWasp:    { w:44, h:32, hp:3, score:250, color:'#FF7043', accent:'#FFD54F', bulletSpeed:5,   weight:[2,3,3,2,1] },
+  lavaBeetle:   { w:38, h:30, hp:4, score:300, color:'#E64A19', accent:'#FFCC80', bulletSpeed:4.5, weight:[2,2,3,2,2] },
+  cinderFang:   { w:54, h:34, hp:3, score:350, color:'#D84315', accent:'#FF8A65', bulletSpeed:5.5, weight:[1,2,3,3,2] },
+  // --- Niveau 2 : créatures venom / insectes verts ---
+  venomBug:     { w:48, h:34, hp:4, score:350, color:'#4CAF50', accent:'#C8E6C9', bulletSpeed:5,   weight:[0,3,3,2,1] },
+  toxinWasp:    { w:42, h:30, hp:3, score:300, color:'#66BB6A', accent:'#A5D6A7', bulletSpeed:5.5, weight:[0,2,3,3,2] },
+  sporeCarrier: { w:52, h:38, hp:5, score:400, color:'#2E7D32', accent:'#B2FF59', bulletSpeed:4.5, weight:[0,1,3,3,2] },
+  // --- Niveau 3 : créatures orage / mécaniques ---
+  stormGolem:     { w:56, h:40, hp:5, score:400, color:'#546E7A', accent:'#FFD54F', bulletSpeed:4.5, weight:[0,0,3,3,2] },
+  lightningHornet:{w:44, h:30, hp:3, score:350, color:'#FF9800', accent:'#FFF176', bulletSpeed:6,   weight:[0,0,2,3,3] },
+  plasmaDrone:  { w:50, h:36, hp:4, score:400, color:'#37474F', accent:'#FFEB3B', bulletSpeed:5.5, weight:[0,0,2,3,3] },
+  // --- Niveau 4 : créatures de glace / cristallines ---
+  frostWisp:    { w:36, h:28, hp:3, score:350, color:'#81D4FA', accent:'#E1F5FE', bulletSpeed:6,   weight:[0,0,0,3,3] },
+  iceGolem:     { w:58, h:42, hp:6, score:500, color:'#4FC3F7', accent:'#B3E5FC', bulletSpeed:4.5, weight:[0,0,0,3,2] },
+  shardReaper:  { w:50, h:36, hp:4, score:450, color:'#29B6F6', accent:'#E1F5FE', bulletSpeed:5.5, weight:[0,0,0,2,3] },
+  // --- Niveau 5 : créatures du vide / biomecaniques ---
+  voidBeast:    { w:60, h:44, hp:6, score:500, color:'#9C27B0', accent:'#CE93D8', bulletSpeed:5,   weight:[0,0,0,0,3] },
+  voidTentacle: { w:52, h:38, hp:5, score:450, color:'#4A148C', accent:'#00E676', bulletSpeed:5.5, weight:[0,0,0,0,3] },
+  voidEye:      { w:44, h:36, hp:4, score:400, color:'#6A1B9A', accent:'#B388FF', bulletSpeed:6,   weight:[0,0,0,0,3] },
+};
+// weight[0] correspond au niveau 1, weight[4] au niveau 5.
+// Les poids plus élevés aux niveaux supérieurs => plus d'ennemis variés et durs.
+
+// 5 Boss, un par niveau. Chaque design est dessiné par Canvas 2D (SECTION 13).
+const BOSS_TYPES = [
+  { name:'Magma Sentinel',   w:110, h:70,  hp:60,  color:'#FF5722', accent:'#FFAB91' },
+  { name:'Venom Stalker',    w:120, h:80,  hp:90,  color:'#4CAF50', accent:'#A5D6A7' },
+  { name:'Thunder Warden',   w:130, h:90,  hp:130, color:'#FF9800', accent:'#FFE082' },
+  { name:'Frost Reaper',     w:140, h:100, hp:180, color:'#29B6F6', accent:'#81D4FA' },
+  { name:'Drake of the Void',w:150, h:110, hp:300, color:'#9C27B0', accent:'#00E676' },
+];
+
+// ============================================================
+// SECTION: Étoiles & fond (parallaxe)
+// ============================================================
+// 3 couches d'étoiles à vitesses différentes pour la profondeur.
+// Les étoiles les plus grandes/rapides sont au premier plan.
+// ============================================================
+function initStars() {
+  stars = [];
+  const layers = [
+    { n: 60, minR: 0.4, maxR: 1.0, speed: 0.3, alpha: 0.5 },
+    { n: 40, minR: 1.0, maxR: 1.8, speed: 0.7, alpha: 0.75 },
+    { n: 24, minR: 1.8, maxR: 2.6, speed: 1.4, alpha: 1.0 },
+  ];
+  layers.forEach((L, i) => {
+    for (let k = 0; k < L.n; k++) {
+      stars.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r: L.minR + Math.random() * (L.maxR - L.minR),
+        speed: L.speed,
+        alpha: L.alpha,
+        layer: i,
+        twinkle: Math.random() * TAU,
+      });
+    }
+  });
+}
+
+function updateStars() {
+  for (let i = 0; i < stars.length; i++) {
+    const s = stars[i];
+    s.x -= s.speed;
+    s.twinkle += 0.05;
+    if (s.x < -4) { s.x = W + 4; s.y = Math.random() * H; }
+  }
+}
+
+function drawStars() {
+  for (let i = 0; i < stars.length; i++) {
+    const s = stars[i];
+    const tw = 0.7 + 0.3 * Math.sin(s.twinkle);
+    ctx.globalAlpha = s.alpha * tw;
+    ctx.fillStyle = '#EAF2FF';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ============================================================
+// SECTION: Audio — Effets sonores (WebAudio)
+// ============================================================
+// Moteur SFX 100% procédural, sans ressource externe.
+// Chaque son est synthétisé (oscillateurs + bruit blanc).
+// L'AudioContext est créé au premier geste utilisateur (clic "Jouer")
+// car les navigateurs exigent une interaction pour démarrer l'audio.
+//   - shoot   : bref "pew" (carré, glissando descendant)
+//   - hit     : impact court (triangle + bruit aigu)
+//   - explode : souffle grave (bruit filtré + basse)
+//   - powerup : deux notes montantes
+// ============================================================
+let audioCtx = null;
+let sfxGain = null;
+let SFX = {};
+
+function initAudio() {
+  if (audioCtx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  audioCtx = new AC();
+  sfxGain = audioCtx.createGain();
+  sfxGain.gain.value = 0.5;
+  sfxGain.connect(audioCtx.destination);
+  // Pré-génère un buffer de bruit blanc réutilisé (explosions + hi-hat).
+  const len = audioCtx.sampleRate;
+  const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  SFX._noise = buf;
+}
+
+// Oscillateur avec enveloppe (attaque + décroissance exponentielle).
+function playTone(freq, dur, type, vol, slideTo) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t);
+  if (slideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(1, slideTo), t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(g); g.connect(sfxGain);
+  osc.start(t); osc.stop(t + dur + 0.02);
+}
+
+// Bruit blanc à travers un filtre + enveloppe.
+function playNoise(dur, vol, filterFreq, type) {
+  if (!audioCtx || !SFX._noise) return;
+  const t = audioCtx.currentTime;
+  const src = audioCtx.createBufferSource();
+  src.buffer = SFX._noise;
+  const f = audioCtx.createBiquadFilter();
+  f.type = type || 'lowpass';
+  f.frequency.setValueAtTime(filterFreq, t);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(sfxGain);
+  src.start(t); src.stop(t + dur + 0.02);
+}
+
+// Définit les 4+ SFX nommés.
+SFX.shoot   = function() { playTone(880, 0.09, 'square', 0.16, 220); };
+SFX.hit     = function() { playTone(320, 0.12, 'triangle', 0.22, 120); playNoise(0.08, 0.15, 2500, 'highpass'); };
+SFX.explode = function() { playNoise(0.5, 0.4, 900, 'lowpass'); playTone(90, 0.4, 'sine', 0.3, 40); };
+SFX.powerup = function() { playTone(523, 0.1, 'square', 0.2, 784); setTimeout(() => playTone(784, 0.14, 'square', 0.2, 1046), 90); };
+SFX.bossHit = function() { playTone(180, 0.15, 'sawtooth', 0.2, 90); };
+
+// ============================================================
+// SECTION: Musique — Moteur chiptune procédural
+// ============================================================
+// 4 voix : basse carrée, lead carrée, hi-hat (bruit filtré), kick (sine glissé).
+// Le scheduler (setInterval) planifie les notes avec un look-ahead de 100ms :
+// on ne fait jamais confiance à la précision de l'horloge seule, on réserve
+// l'audio à l'avance pour éviter les "gaps" sonores.
+// Fréquence d'une note: 440 * 2^(semitones/12), 440Hz = La4 de référence.
+// ============================================================
+let musicTimer = null;
+let musicGain = null;
+let musicLevel = 1;
+let nextNoteTime = 0;
+let current16th = 0;
+const LOOKAHEAD = 100;       // fenêtre de planification (ms)
+const SCHED_INTERVAL = 25;   // cadence de vérification du scheduler (ms)
+
+function noteFreq(semitones) {
+  return 440 * Math.pow(2, semitones / 12);
+}
+
+// 5 niveaux : BPM et transposition différents (tension croissante).
+// bass/lead sont des séquences de demi-tons (par rapport à la base 440Hz).
+const MUSIC_LEVELS = [
+  { bpm:120, key:0, bass:[0,0,3,3,5,5,7,7],   lead:[12,14,16,19,16,14,12,10, 12,14,17,19,22,21,19,17] },
+  { bpm:132, key:2, bass:[0,0,4,4,7,7,9,9],   lead:[14,16,18,21,18,16,14,11, 14,17,19,23,21,19,17,16] },
+  { bpm:144, key:4, bass:[0,0,5,5,7,7,10,10], lead:[15,17,20,22,19,17,15,13, 15,18,21,24,22,20,18,17] },
+  { bpm:156, key:5, bass:[0,0,3,3,7,7,10,10], lead:[16,18,21,23,20,18,16,14, 16,19,22,25,23,21,19,18] },
+  { bpm:168, key:7, bass:[0,0,4,4,7,7,11,11], lead:[17,19,22,24,21,19,17,15, 17,20,23,26,24,22,20,19] },
+];
+
+function startMusic() {
+  if (!audioCtx) return;
+  if (musicTimer) stopMusic();
+  musicGain = audioCtx.createGain();
+  musicGain.gain.value = 0.18; // gain master musique (plus faible que le SFX)
+  musicGain.connect(audioCtx.destination);
+  nextNoteTime = audioCtx.currentTime + 0.1;
+  current16th = 0;
+  musicTimer = setInterval(scheduleMusic, SCHED_INTERVAL);
+}
+
+function stopMusic() {
+  if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+  if (musicGain) {
+    try {
+      musicGain.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 0.05);
+      setTimeout(() => { try { musicGain.disconnect(); } catch(e){} }, 150);
+    } catch(e) {}
+    musicGain = null;
+  }
+}
+
+function setMusicLevel(n) { musicLevel = Math.max(1, Math.min(5, n)); }
+
+// Planifie toutes les notes dans [now, now+look-ahead].
+function scheduleMusic() {
+  if (!audioCtx || !musicGain) return;
+  const cfg = MUSIC_LEVELS[musicLevel - 1];
+  const secPer16th = 60 / cfg.bpm / 4; // durée d'un 16e de mesure
+  while (nextNoteTime < audioCtx.currentTime + LOOKAHEAD / 1000) {
+    const step = current16th;
+    if (step % 4 === 0) { // basse : toutes les 4es
+      const b = cfg.bass[(step / 4) % cfg.bass.length];
+      scheduleNote(noteFreq(cfg.key + b - 24), secPer16th * 3.5, 'square', 0.5, nextNoteTime);
+    }
+    if (step % 2 === 0) { // lead : chaque 8e (densité)
+      const l = cfg.lead[(step / 2) % cfg.lead.length];
+      scheduleNote(noteFreq(cfg.key + l - 12), secPer16th * 1.8, 'square', 0.35, nextNoteTime);
+    }
+    scheduleHat(nextNoteTime);            // hi-hat sur chaque 16e
+    if (step % 4 === 0) scheduleKick(nextNoteTime); // kick sur les temps forts
+    nextNoteTime += secPer16th;
+    current16th++;
+  }
+}
+
+function scheduleNote(freq, dur, type, vol, when) {
+  if (!audioCtx || !musicGain) return;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, when);
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.linearRampToValueAtTime(vol, when + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+  osc.connect(g); g.connect(musicGain);
+  osc.start(when); osc.stop(when + dur + 0.02);
+}
+
+function scheduleHat(when) {
+  if (!audioCtx || !musicGain || !SFX._noise) return;
+  const src = audioCtx.createBufferSource();
+  src.buffer = SFX._noise;
+  const f = audioCtx.createBiquadFilter();
+  f.type = 'highpass'; f.frequency.setValueAtTime(7000, when);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.1, when);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
+  src.connect(f); f.connect(g); g.connect(musicGain);
+  src.start(when); src.stop(when + 0.06);
+}
+
+function scheduleKick(when) {
+  if (!audioCtx || !musicGain) return;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(120, when);
+  osc.frequency.exponentialRampToValueAtTime(45, when + 0.12); // glissando grave
+  g.gain.setValueAtTime(0.5, when);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + 0.15);
+  osc.connect(g); g.connect(musicGain);
+  osc.start(when); osc.stop(when + 0.16);
+}
+
+// ============================================================
+// SECTION: Entrées — Clavier & Manette Xbox
+// ============================================================
+// Clavier : W/S/A/D ou flèches = déplacement, Espace/Entrée = tir,
+// Shift = tir rapide. Manette Xbox : stick gauche + D-Pad = déplacement,
+// A (index 0) / X (index 2) = tir, RT (7) / LT (6) = tir rapide,
+// bouton Xbox (index 9) = démarrage / restart.
+// La manette est échantillonnée (polling) à chaque frame via
+// navigator.getGamepads() — plus fiable qu'un event pour les sticks.
+// ============================================================
+const keys = {};
+let gamepad = null;
+let gamepadPrevButtons = {}; // pour détecter les "appuis" (edge)
+
+// État des contrôles tactiles (déclarés ici pour être lus par readInput).
+let touchMove = { x:0, y:0, active:false };
+let touchFire = false;
+let touchRapid = false;
+
+function pollGamepad() {
+  if (!navigator.getGamepads) return;
+  const pads = navigator.getGamepads();
+  for (const p of pads) {
+    if (p && p.id) { gamepad = p; break; }
+  }
+  // Bouton Xbox (index 9) : "edge" => action de démarrage / restart.
+  const xboxPressed = gamepad ? gamepad.buttons[9].pressed : false;
+  if (xboxPressed && !gamepadPrevButtons[9]) onXboxButton();
+  if (gamepad) for (let i = 0; i < gamepad.buttons.length; i++) gamepadPrevButtons[i] = gamepad.buttons[i].pressed;
+}
+
+// Retourne {up,down,left,right,shoot,rapid,firePressed} agrégé clavier+manette+touch.
+function readInput() {
+  let up=0, down=0, left=0, right=0, shoot=0, rapid=0;
+  // --- Clavier ---
+  if (keys['KeyW'] || keys['ArrowUp']) up = 1;
+  if (keys['KeyS'] || keys['ArrowDown']) down = 1;
+  if (keys['KeyA'] || keys['ArrowLeft']) left = 1;
+  if (keys['KeyD'] || keys['ArrowRight']) right = 1;
+  if (keys['Space'] || keys['Enter']) shoot = 1;
+  if (keys['ShiftLeft'] || keys['ShiftRight']) rapid = 1;
+  // --- Manette (ajout, borné à 1) ---
+  if (gamepad) {
+    const ax = gamepad.axes[0] || 0;
+    const ay = gamepad.axes[1] || 0;
+    if (ax > 0.25) right = Math.max(right, ax);
+    if (ax < -0.25) left = Math.max(left, -ax);
+    if (ay > 0.25) down = Math.max(down, ay);
+    if (ay < -0.25) up = Math.max(up, -ay);
+    // D-Pad : boutons 12=up, 13=down, 14=left, 15=right
+    if (gamepad.buttons[12] && gamepad.buttons[12].pressed) up = 1;
+    if (gamepad.buttons[13] && gamepad.buttons[13].pressed) down = 1;
+    if (gamepad.buttons[14] && gamepad.buttons[14].pressed) left = 1;
+    if (gamepad.buttons[15] && gamepad.buttons[15].pressed) right = 1;
+    // A (0) / X (2) = tir ; RT (7) / LT (6) = tir rapide
+    if (gamepad.buttons[0].pressed || gamepad.buttons[2].pressed) shoot = 1;
+    if (gamepad.buttons[7].pressed || gamepad.buttons[6].pressed) rapid = 1;
+  }
+  // --- Tactile (stick + boutons) ---
+  if (touchMove.active) {
+    if (touchMove.x > 0.15) right = Math.max(right, touchMove.x);
+    if (touchMove.x < -0.15) left = Math.max(left, -touchMove.x);
+    if (touchMove.y > 0.15) down = Math.max(down, touchMove.y);
+    if (touchMove.y < -0.15) up = Math.max(up, -touchMove.y);
+  }
+  if (touchFire) shoot = 1;
+  if (touchRapid) rapid = 1;
+  return { up, down, left, right, shoot, rapid };
+}
+
+// Action du bouton Xbox (index 9) : démarre si au menu, relance si fin.
+function onXboxButton() {
+  if (!state.running && !state.over && !state.victory) startGame();
+  else if (state.over || state.victory) startGame();
+}
+
+window.addEventListener('keydown', function(e) {
+  keys[e.code] = true;
+  // Empêche le scroll de la page avec Espace / flèches.
+  if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].indexOf(e.code) !== -1) e.preventDefault();
+});
+window.addEventListener('keyup', function(e) { keys[e.code] = false; });
+
+// ============================================================
+// SECTION: Responsive canvas — adapte le canvas au viewport
+// ============================================================
+// Le canvas interne reste 960x540 (ratio 16:9) pour ne pas altérer
+// la logique du jeu. On redimensionne son boîtier CSS (#wrap) pour
+// qu'il tienne dans l'écran tout en conservant le ratio.
+// ============================================================
+(function fitCanvas() {
+  const wrap = document.getElementById('wrap');
+  const area = document.getElementById('game-area');
+  const RATIO = 960 / 540; // 16:9
+  function fit() {
+    const w = area.clientWidth;
+    const h = area.clientHeight;
+    let cw = w, ch = w / RATIO;
+    if (ch > h) { ch = h; cw = h * RATIO; }
+    wrap.style.width = Math.floor(cw) + 'px';
+    wrap.style.height = Math.floor(ch) + 'px';
+    const cv = document.getElementById('game');
+    cv.style.width = Math.floor(cw) + 'px';
+    cv.style.height = Math.floor(ch) + 'px';
+  }
+  window.addEventListener('resize', fit);
+  window.addEventListener('orientationchange', function() {
+    setTimeout(function() {
+      fit();
+      // Quand l'écran passe en paysage, on passe en plein écran
+      if (window.innerWidth > window.innerHeight) {
+        requestFullscreenSafe();
+      }
+    }, 150);
+  });
+  fit();
+})();
+
+// ============================================================
+// SECTION: Contrôles tactiles (stick virtuel + boutons FIRE/RAPID)
+// ============================================================
+// Stick virtuel : on suit le doigt qui touche le stick-base.
+// Position relative au centre du stick => vecteur (sx, sy) borné à 1.
+// Boutons FIRE / RAPID : on active l'état pendant le touch,
+// on le relâche au touchend / touchcancel.
+// Les valeurs sont agrégées dans readInput() ci-dessous.
+// ============================================================
+(function setupTouch() {
+  const base = document.getElementById('stick-base');
+  const knob = document.getElementById('stick-knob');
+  const fire = document.getElementById('btn-fire');
+  const rapid = document.getElementById('btn-rapid');
+  const STICK_R = 52; // rayon max du knob (px CSS, approximatif)
+  const DEADZONE = 0.12;
+
+  function onStickMove(clientX, clientY) {
+    const r = base.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    let dx = (clientX - cx) / (r.width / 2);
+    let dy = (clientY - cy) / (r.height / 2);
+    const len = Math.hypot(dx, dy);
+    if (len > 1) { dx /= len; dy /= len; }
+    // deadzone
+    if (len < DEADZONE) { dx = 0; dy = 0; }
+    touchMove.x = dx; touchMove.y = dy; touchMove.active = true;
+    const kx = dx * 28, ky = dy * 28;
+    knob.style.transform = 'translate(' + kx + 'px, ' + ky + 'px)';
+  }
+  function onStickEnd() {
+    touchMove.x = 0; touchMove.y = 0; touchMove.active = false;
+    knob.style.transform = 'translate(0px, 0px)';
+  }
+
+  // Stick — on utilise pointer events si dispo (meilleure compat), sinon touch events.
+  let stickPointerId = null;
+  base.addEventListener('pointerdown', function(e) {
+    e.preventDefault();
+    stickPointerId = e.pointerId;
+    base.setPointerCapture && base.setPointerCapture(e.pointerId);
+    onStickMove(e.clientX, e.clientY);
+  });
+  base.addEventListener('pointermove', function(e) {
+    if (e.pointerId === stickPointerId) onStickMove(e.clientX, e.clientY);
+  });
+  function stickUp(e) {
+    if (e.pointerId === stickPointerId) { stickPointerId = null; onStickEnd(); }
+  }
+  base.addEventListener('pointerup', stickUp);
+  base.addEventListener('pointercancel', stickUp);
+
+  // Boutons FIRE / RAPID — pointer events avec capture pour éviter
+  // de perdre le "relâchement" si le doigt sort du bouton.
+  function bindHold(el, on, off) {
+    let pid = null;
+    el.addEventListener('pointerdown', function(e) {
+      e.preventDefault();
+      pid = e.pointerId;
+      el.setPointerCapture && el.setPointerCapture(pid);
+      el.classList.add('active');
+      on();
+    });
+    function release(e) {
+      if (e.pointerId === pid) { pid = null; el.classList.remove('active'); off(); }
+    }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+  }
+  bindHold(fire,  function(){ touchFire = true; },  function(){ touchFire = false; });
+  bindHold(rapid, function(){ touchRapid = true; }, function(){ touchRapid = false; });
+
+  // Empêche le zoom / scroll par défaut sur tout le jeu.
+  document.addEventListener('touchmove', function(e) {
+    if (e.target.closest && (e.target.closest('#controls') || e.target.closest('#game') || e.target.closest('#wrap'))) {
+      e.preventDefault();
+    }
+  }, { passive:false });
+})();
+
+// ============================================================
+// SECTION: Génération & spawn
+// ============================================================
+// Fabrication des entités (joueur, ennemis, boss, projectiles, bonus).
+// Le spawn d'ennemi utilise un tirage pondéré selon le niveau :
+// plus le niveau est élevé, plus les types "lourds" (voidBeast,
+// iceGolem...) ont de poids, ce qui augmente la difficulté.
+// ============================================================
+
+// --- Joueur ---
+function makePlayer() {
+  return {
+    x: 120, y: H / 2, w: 34, h: 30,
+    vx: 0, vy: 0,
+  };
+}
+
+// --- Projectile joueur (toujours vers la droite) ---
+function firePlayerBullet() {
+  const bx = player.x + player.w / 2 + 14;
+  const by = player.y;
+  bullets.push({ x: bx, y: by, vx: 12, vy: 0, r: 5, life: 90 });
+  // Tir rapide = double tir (deux balles décalées verticalement).
+  if (playerRapid > 0) {
+    bullets.push({ x: bx, y: by - 8, vx: 12, vy: 0, r: 4, life: 90 });
+    bullets.push({ x: bx, y: by + 8, vx: 12, vy: 0, r: 4, life: 90 });
+  }
+  SFX.shoot();
+}
+
+// --- Ennemi classique : choisit un type selon les poids du niveau ---
+function spawnEnemy() {
+  const lvl = state.level - 1; // index 0..4
+  const entries = Object.keys(ENEMY_TYPES).map(function(name) {
+    return { name: name, w: ENEMY_TYPES[name].weight[lvl] || 0 };
+  });
+  // Filtrer les poids nuls puis tirage pondéré (somme puis seuil aléatoire).
+  const total = entries.reduce(function(s, e) { return s + e.w; }, 0);
+  let r = Math.random() * total, chosen = entries[0].name;
+  for (const e of entries) { r -= e.w; if (r <= 0) { chosen = e.name; break; } }
+  const t = ENEMY_TYPES[chosen];
+  const y = 60 + Math.random() * (H - 120);
+  enemies.push({
+    type: chosen, x: W + 20, y: y, w: t.w, h: t.h,
+    hp: t.hp, maxHp: t.hp, score: t.score, color: t.color,
+    accent: t.accent, bulletSpeed: t.bulletSpeed,
+    fireTimer: 40 + Math.random() * 80, // délai avant le premier tir
+    baseY: y, wobble: Math.random() * TAU,
+  });
+}
+
+// --- Boss du niveau (un seul, apparaît à 20 kills) ---
+function spawnBoss() {
+  const cfg = BOSS_TYPES[state.level - 1];
+  boss = {
+    name: cfg.name, x: W + cfg.w, y: H / 2, w: cfg.w, h: cfg.h,
+    hp: cfg.hp, maxHp: cfg.hp, color: cfg.color, accent: cfg.accent,
+    targetX: W - 100, // entre depuis la droite jusqu'à x = W-100
+    baseY: H / 2, t: 0, pattern: 0, fireTimer: 60,
+  };
+}
+
+// --- Bonus (power-up) tombant ---
+function spawnPowerup(x, y) {
+  // 12% de chance de drop, deux types : "shield" (bleu) / "rapid" (orange).
+  if (Math.random() > 0.12) return;
+  const type = Math.random() < 0.5 ? 'shield' : 'rapid';
+  powerups.push({ x: x, y: y, type: type, vx: -1.2, vy: 0.6, r: 12, life: 600 });
+}
+
+// ============================================================
+// SECTION: Particules & explosions
+// ============================================================
+// Système de particules pour explosions, traînées et impacts.
+// Chaque particule a position, vitesse, vie et taille décroissante.
+// ============================================================
+function addParticles(x, y, color, count, speed) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * TAU;
+    const sp = (0.4 + Math.random()) * (speed || 4);
+    particles.push({
+      x: x, y: y,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      life: 24 + Math.random() * 20, maxLife: 44,
+      r: 1.5 + Math.random() * 2.5, color: color,
+    });
+  }
+}
+
+function explosion(x, y, color, big) {
+  addParticles(x, y, color, big ? 40 : 18, big ? 6 : 4);
+  addParticles(x, y, '#FFFFFF', big ? 12 : 5, 2);
+  if (big) SFX.explode(); else SFX.hit();
+}
+
+// ============================================================
+// SECTION: Mise à jour (update)
+// ============================================================
+// Met à jour toutes les entités à chaque frame. L'ordre :
+// entrées -> joueur -> projectiles -> ennemis -> boss -> bonus ->
+// collisions -> particules -> nettoyage hors-écran.
+// ============================================================
+function update() {
+  state.time++;
+  updateStars();
+  pollGamepad();
+
+  if (!state.running) return;
+
+  const input = readInput();
+
+  // --- Déplacement du joueur (borné à l'écran) ---
+  player.x += (input.right - input.left) * PLAYER_SPEED;
+  player.y += (input.down - input.up) * PLAYER_SPEED;
+  player.x = Math.max(16, Math.min(W - 40, player.x));
+  player.y = Math.max(34, Math.min(H - 20, player.y));
+
+  // --- Timers d'invincibilité / bonus ---
+  if (playerShield > 0) playerShield--;
+  if (playerRapid > 0) playerRapid--;
+
+  // --- Tir du joueur ---
+  playerFireTimer--;
+  if (input.shoot && playerFireTimer <= 0) {
+    firePlayerBullet();
+    playerFireTimer = (playerRapid > 0 || input.rapid) ? RAPID_FIRE_DELAY : PLAYER_FIRE_DELAY;
+  }
+
+  // --- Projectiles joueur ---
+  for (const b of bullets) { b.x += b.vx; b.y += b.vy; b.life--; }
+  bullets = bullets.filter(function(b) { return b.life > 0 && b.x < W + 20; });
+
+  // --- Projectiles ennemis ---
+  for (const b of enemyBullets) { b.x += b.vx; b.y += b.vy; }
+  enemyBullets = enemyBullets.filter(function(b) { return b.x > -20 && b.x < W + 20 && b.y > -20 && b.y < H + 20; });
+
+  // --- Ennemis ---
+  updateEnemies();
+
+  // --- Boss ---
+  updateBoss();
+
+  // --- Bonus ---
+  for (const p of powerups) { p.x += p.vx; p.y += p.vy; p.life--; }
+  powerups = powerups.filter(function(p) { return p.life > 0 && p.x > -20; });
+
+  // --- Particules ---
+  for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vx *= 0.96; p.vy *= 0.96; p.life--; }
+  particles = particles.filter(function(p) { return p.life > 0; });
+
+  // --- Collisions ---
+  handleCollisions();
+
+  // --- Nettoyage des ennemis morts (marqués par killEnemy) ---
+  enemies = enemies.filter(function(e) { return !e.dead; });
+}
+
+// Met à jour les ennemis classiques (mouvement + tir).
+function updateEnemies() {
+  for (const e of enemies) {
+    if (e.dead) continue;
+    e.wobble += 0.05;
+    // Mouvement horizontal vers le joueur.
+    e.x -= 1.4 + state.level * 0.25;
+    // Ondulation : certains types ondule plus fortement (sinus à grande amplitude).
+    const wobblyTypes = ['frostWisp', 'voidEye', 'lightningHornet'];
+    if (wobblyTypes.indexOf(e.type) !== -1) {
+      e.y = e.baseY + Math.sin(e.wobble * 2) * 40;
+    } else {
+      e.y = e.baseY + Math.sin(e.wobble) * 12;
+    }
+    // Tir périodique vers le joueur.
+    e.fireTimer--;
+    if (e.fireTimer <= 0) {
+      fireEnemyBullet(e);
+      e.fireTimer = 60 + Math.random() * 90 - state.level * 4;
+    }
+  }
+  // Retire les ennemis partis à gauche de l'écran ET les ennemis morts.
+  enemies = enemies.filter(function(e) { return !e.dead && e.x > -60; });
+}
+
+// Un ennemi tire un projectile vers la position du joueur.
+function fireEnemyBullet(e) {
+  const dx = player.x - e.x, dy = player.y - e.y;
+  const d = Math.hypot(dx, dy) || 1;
+  enemyBullets.push({
+    x: e.x, y: e.y,
+    vx: (dx / d) * e.bulletSpeed, vy: (dy / d) * e.bulletSpeed,
+    r: 5, color: e.color,
+  });
+}
+
+// --- IA du Boss : entre, ondule, et change de motif selon son HP ---
+function updateBoss() {
+  if (!boss) return;
+  boss.t++;
+  // Entrée : glisse depuis la droite jusqu'à targetX (W-100).
+  if (boss.x > boss.targetX) {
+    boss.x -= 2.2;
+  } else {
+    // Mouvement vertical en sinus (amplitude modeste).
+    boss.y = boss.baseY + Math.sin(boss.t * 0.02) * (H / 2 - 90);
+  }
+  // Changement de motif selon le ratio de vie (>0.66 / 0.33-0.66 / <0.33).
+  const ratio = boss.hp / boss.maxHp;
+  const targetPattern = ratio > 0.66 ? 0 : (ratio > 0.33 ? 1 : 2);
+  if (targetPattern !== boss.pattern) boss.pattern = targetPattern;
+
+  bossFireTimer--;
+  if (bossFireTimer <= 0 && boss.x <= boss.targetX) {
+    bossShoot();
+    // Cadence de tir qui s'accélère quand le boss faiblit.
+    bossFireTimer = boss.pattern === 2 ? 30 : (boss.pattern === 1 ? 40 : 55);
+  }
+}
+
+// Les 3 motifs de tir du boss : visé, ventail, anneau de balles.
+function bossShoot() {
+  const cx = boss.x - boss.w / 2, cy = boss.y;
+  if (boss.pattern === 0) {
+    // Motif 0 (HP élevé) : tir visé précis + 2 balles latérales.
+    const dx = player.x - cx, dy = player.y - cy, d = Math.hypot(dx, dy) || 1;
+    enemyBullets.push({ x: cx, y: cy, vx: (dx/d)*6, vy: (dy/d)*6, r: 6, color: boss.color });
+    enemyBullets.push({ x: cx, y: cy, vx: (dx/d)*6 - 1.5, vy: (dy/d)*6 + 1.5, r: 5, color: boss.accent });
+    enemyBullets.push({ x: cx, y: cy, vx: (dx/d)*6 + 1.5, vy: (dy/d)*6 - 1.5, r: 5, color: boss.accent });
+  } else if (boss.pattern === 1) {
+    // Motif 1 (HP moyen) : ventail de 5 balles vers le joueur.
+    const base = Math.atan2(player.y - cy, player.x - cx);
+    for (let i = -2; i <= 2; i++) {
+      const a = base + i * 0.22;
+      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a)*5.5, vy: Math.sin(a)*5.5, r: 6, color: boss.color });
+    }
+  } else {
+    // Motif 2 (HP faible) : anneau de 12 balles + tir visé.
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * TAU + boss.t * 0.05;
+      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a)*4.5, vy: Math.sin(a)*4.5, r: 5, color: boss.accent });
+    }
+    const dx = player.x - cx, dy = player.y - cy, d = Math.hypot(dx, dy) || 1;
+    enemyBullets.push({ x: cx, y: cy, vx: (dx/d)*7, vy: (dy/d)*7, r: 7, color: boss.color });
+  }
+  SFX.bossHit();
+}
+
+// ============================================================
+// SECTION: Détection de collisions
+// ============================================================
+// Collisions AABB (boîte englobante) pour les entités, cercle-cercle
+// pour les projectiles. On teste :
+//   1. balles joueur vs ennemis/boss
+//   2. balles ennemis vs joueur
+//   3. ennemis vs joueur (contact direct)
+//   4. bonus vs joueur
+// ============================================================
+function aabb(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+function circleRect(c, r) {
+  const nx = Math.max(r.x, Math.min(c.x, r.x + r.w));
+  const ny = Math.max(r.y, Math.min(c.y, r.y + r.h));
+  return (c.x - nx) * (c.x - nx) + (c.y - ny) * (c.y - ny) <= c.r * c.r;
+}
+
+function handleCollisions() {
+  const pr = { x: player.x - player.w/2, y: player.y - player.h/2, w: player.w, h: player.h };
+
+  // --- 1. Balles joueur vs ennemis ---
+  for (const b of bullets) {
+    for (const e of enemies) {
+      if (e.hp > 0 && !e.dead && circleRect(b, e)) {
+        e.hp--;
+        b.life = 0;
+        addParticles(b.x, b.y, e.color, 6, 3);
+        if (e.hp <= 0) killEnemy(e);
+        else SFX.hit();
+      }
+    }
+    // --- Balles joueur vs boss ---
+    if (boss && boss.hp > 0 && circleRect(b, boss)) {
+      boss.hp--;
+      b.life = 0;
+      addParticles(b.x, b.y, boss.color, 8, 4);
+      if (boss.hp <= 0) killBoss();
+      else SFX.bossHit();
+    }
+  }
+  bullets = bullets.filter(function(b) { return b.life > 0; });
+
+  // --- 2. Balles ennemis vs joueur ---
+  if (playerShield <= 0) {
+    for (const b of enemyBullets) {
+      if (circleRect(b, pr)) {
+        b.x = -1000; // retire
+        hitPlayer();
+        break;
+      }
+    }
+  }
+
+  // --- 3. Ennemis vs joueur (contact) ---
+  if (playerShield <= 0) {
+    for (const e of enemies) {
+      if (e.hp > 0 && !e.dead && aabb(pr, e)) {
+        killEnemy(e, true);
+        hitPlayer();
+        break;
+      }
+    }
+    if (boss && boss.hp > 0 && aabb(pr, boss)) hitPlayer();
+  }
+
+  // --- 4. Bonus vs joueur ---
+  for (const p of powerups) {
+    if (p.life > 0 && circleRect(p, pr)) {
+      applyPowerup(p.type);
+      p.life = 0;
+    }
+  }
+  powerups = powerups.filter(function(p) { return p.life > 0; });
+}
+
+// Applique l'effet d'un bonus.
+function applyPowerup(type) {
+  if (type === 'shield') playerShield = 5 * 60; // 5s d'invincibilité
+  else playerRapid = 5 * 60;                     // 5s de tir rapide
+  SFX.powerup();
+}
+
+// Un ennemi est tué : score + drop de bonus + explosion.
+function killEnemy(e, silent) {
+  e.hp = 0;
+  e.dead = true;
+  if (!silent) {
+    state.score += e.score;
+    state.kills++;
+    spawnPowerup(e.x, e.y);
+  }
+  explosion(e.x, e.y, e.color, false);
+}
+
+// Le boss est vaincu : score, montée de niveau, ou victoire finale.
+function killBoss() {
+  boss.hp = 0;
+  state.score += 3000 * state.level;
+  explosion(boss.x, boss.y, boss.color, true);
+  addParticles(boss.x, boss.y, boss.accent, 30, 6);
+  boss = null;
+  state.kills = 0;
+  if (state.level >= 5) {
+    endGame(true);
+  } else {
+    state.level++;
+    setMusicLevel(state.level);
+    updateHUD();
+  }
+}
+
+// Le joueur est touché : perd une vie + invincibilité temporaire.
+function hitPlayer() {
+  if (playerShield > 0) return;
+  state.lives--;
+  playerShield = INVINCIBILITY_FRAMES;
+  explosion(player.x, player.y, '#4FC3F7', true);
+  updateHUD();
+  if (state.lives <= 0) endGame(false);
+}
+
+// ============================================================
+// SECTION: Dessin — Joueurs & ennemis
+// ============================================================
+// Tous les visages sont dessinés avec des chemins Canvas 2D (aucune image).
+// ============================================================
+function drawPlayer() {
+  const x = player.x, y = player.y, w = player.w, h = player.h;
+  ctx.save();
+  // Lueur de bouclier (si actif) : anneau bleu pulsant.
+  if (playerShield > 0) {
+    ctx.globalAlpha = 0.4 + 0.3 * Math.sin(state.time * 0.3);
+    ctx.strokeStyle = '#4FC3F7'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, 26, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  // Flammes moteur (arrière, à gauche du vaisseau).
+  const fl = 8 + 4 * Math.sin(state.time * 0.5);
+  ctx.fillStyle = '#FF9800';
+  ctx.beginPath();
+  ctx.moveTo(x - w/2, y - 6);
+  ctx.lineTo(x - w/2 - fl, y);
+  ctx.lineTo(x - w/2, y + 6);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#FFD54F';
+  ctx.beginPath();
+  ctx.moveTo(x - w/2, y - 3);
+  ctx.lineTo(x - w/2 - fl * 0.6, y);
+  ctx.lineTo(x - w/2, y + 3);
+  ctx.closePath(); ctx.fill();
+  // Corps principal (triangle pointant à droite).
+  ctx.fillStyle = '#E8F1FF';
+  ctx.beginPath();
+  ctx.moveTo(x + w/2, y);
+  ctx.lineTo(x - w/2, y - h/2);
+  ctx.lineTo(x - w/4, y);
+  ctx.lineTo(x - w/2, y + h/2);
+  ctx.closePath(); ctx.fill();
+  // Dôme / cockpit.
+  ctx.fillStyle = '#4FC3F7';
+  ctx.beginPath(); ctx.arc(x + 2, y, 6, 0, TAU); ctx.fill();
+  // Ailes supérieures / inférieures.
+  ctx.fillStyle = '#7C4DFF';
+  ctx.beginPath();
+  ctx.moveTo(x - 4, y - h/2); ctx.lineTo(x - w/2 - 2, y - h/2 - 4); ctx.lineTo(x - w/4, y - 4);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x - 4, y + h/2); ctx.lineTo(x - w/2 - 2, y + h/2 + 4); ctx.lineTo(x - w/4, y + 4);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// Dessin d'un ennemi selon son type (visage distinct pour chacun).
+function drawEnemy(e) {
+  const x = e.x, y = e.y, w = e.w, h = e.h;
+  ctx.save();
+  ctx.translate(x, y);
+  switch (e.type) {
+    case 'magmaDrone': {
+      // Corps rocheux sombre (ellipse).
+      ctx.fillStyle = '#3E2723';
+      ctx.beginPath(); ctx.ellipse(0, 0, w/2, h/2, 0, 0, TAU); ctx.fill();
+      // Fissures de magma (courbes quadratiques orange).
+      ctx.strokeStyle = '#FF5722'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-w/3, -h/4); ctx.quadraticCurveTo(0, 0, w/4, h/5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(w/5, -h/3); ctx.quadraticCurveTo(w/4, h/6, 0, h/3); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-w/4, h/4); ctx.quadraticCurveTo(-w/6, 0, -w/5, -h/4); ctx.stroke();
+      // Pic cristallin en haut.
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.moveTo(-4, -h/2); ctx.lineTo(0, -h/2 - 8); ctx.lineTo(4, -h/2); ctx.fill();
+      // Œil fondu (dégradé radial blanc->orange->rouge).
+      const g = ctx.createRadialGradient(0, 0, 1, 0, 0, 10);
+      g.addColorStop(0, '#FFFFFF');
+      g.addColorStop(0.5, e.accent);
+      g.addColorStop(1, '#FF3D00');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, 8, 0, TAU); ctx.fill();
+      break;
+    }
+    case 'emberWasp': {
+      // Corps goutte orange (ellipse allongée).
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.ellipse(0, 0, w/2, h/2, 0, 0, TAU); ctx.fill();
+      // 3 bandes sombres.
+      ctx.fillStyle = '#BF360C';
+      for (let i = -1; i <= 1; i++) { ctx.fillRect(i * 10 - 3, -h/2, 6, h); }
+      // 2 ailes semi-transparentes (alpha 0.5).
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath(); ctx.ellipse(4, -h/2 - 5, 12, 6, -0.3, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(4, h/2 + 5, 12, 6, 0.3, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 1;
+      // Dard à l'arrière.
+      ctx.fillStyle = '#5D4037';
+      ctx.beginPath(); ctx.moveTo(-w/2, 0); ctx.lineTo(-w/2 - 10, -2); ctx.lineTo(-w/2 - 10, 2); ctx.fill();
+      // Yeux jaunes.
+      ctx.fillStyle = e.accent;
+      ctx.beginPath(); ctx.arc(-6, -4, 3, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(6, -4, 3, 0, TAU); ctx.fill();
+      break;
+    }
+    case 'lavaBeetle': {
+      // Corps rouge sombre (ellipse).
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.ellipse(0, 0, w/2, h/2, 0, 0, TAU); ctx.fill();
+      // Carapace segmentée (3 lignes verticales).
+      ctx.strokeStyle = '#4E342E'; ctx.lineWidth = 2;
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath(); ctx.moveTo(i * w/4, -h/2); ctx.lineTo(i * w/4, h/2); ctx.stroke();
+      }
+      // Ventre lumineux orange.
+      ctx.fillStyle = e.accent; ctx.globalAlpha = 0.6;
+      ctx.beginPath(); ctx.ellipse(0, h/3, w/3, h/5, 0, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 1;
+      // Mandibules.
+      ctx.fillStyle = '#3E2723';
+      ctx.beginPath(); ctx.moveTo(-w/2, -3); ctx.lineTo(-w/2 - 8, -6); ctx.lineTo(-w/2, 0); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-w/2, 3); ctx.lineTo(-w/2 - 8, 6); ctx.lineTo(-w/2, 0); ctx.fill();
+      break;
+    }
+    case 'cinderFang': {
+      // Corps angulaire (polygone) rouge sombre.
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.moveTo(-w/2, -h/4); ctx.lineTo(-w/3, -h/2); ctx.lineTo(w/3, -h/2);
+      ctx.lineTo(w/2, -h/4); ctx.lineTo(w/2, h/4); ctx.lineTo(w/3, h/2);
+      ctx.lineTo(-w/3, h/2); ctx.lineTo(-w/2, h/4); ctx.closePath(); ctx.fill();
+      // 2 crocs pointus.
+      ctx.fillStyle = '#FF8A65';
+      ctx.beginPath(); ctx.moveTo(-w/2, -h/6); ctx.lineTo(-w/2 - 12, -h/6 - 6); ctx.lineTo(-w/2, 0); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-w/2, h/6); ctx.lineTo(-w/2 - 12, h/6 + 6); ctx.lineTo(-w/2, 0); ctx.fill();
+      // Œil lumineux orange.
+      const g = ctx.createRadialGradient(0, 0, 1, 0, 0, 7);
+      g.addColorStop(0, '#FFFFFF');
+      g.addColorStop(0.5, e.accent);
+      g.addColorStop(1, e.color);
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, 6, 0, TAU); ctx.fill();
+      // Particules de braises (petits points).
+      ctx.fillStyle = '#FFAB91';
+      ctx.beginPath(); ctx.arc(w/3, -h/3, 2, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(w/4, h/4, 2, 0, TAU); ctx.fill();
+      break;
+    }
+    case 'venomBug': {
+      // Corps ovale vert.
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.ellipse(0, 0, w/2, h/2, 0, 0, TAU); ctx.fill();
+      // 3 paires de pattes courbes (courbes quadratiques).
+      ctx.strokeStyle = '#1B5E20'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath(); ctx.moveTo(i * 10, -h/3); ctx.quadraticCurveTo(i * 10 + 8, -h/2 - 8, i * 10 + 4, -h/2 - 14); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(i * 10, h/3); ctx.quadraticCurveTo(i * 10 + 8, h/2 + 8, i * 10 + 4, h/2 + 14); ctx.stroke();
+      }
+      // Grand œil jaune.
+      ctx.fillStyle = e.accent;
+      ctx.beginPath(); ctx.arc(-w/4, -h/6, 5, 0, TAU); ctx.fill();
+      // Taches bioluminescentes vertes (4 petits cercles).
+      ctx.fillStyle = '#B2FF59';
+      ctx.beginPath(); ctx.arc(w/4, -h/4, 2.5, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(w/3, h/5, 2.5, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(-w/3, h/3, 2.5, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, h/4, 2.5, 0, TAU); ctx.fill();
+      break;
+    }
+    case 'toxinWasp': {
+      // Corps goutte vert.
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.ellipse(0, 0, w/2, h/2, 0, 0, TAU); ctx.fill();
+      // 2 ailes (alpha 0.6).
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath(); ctx.ellipse(2, -h/2 - 4, 10, 5, -0.3, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(2, h/2 + 4, 10, 5, 0.3, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 1;
+      // Bandes vert foncé.
+      ctx.fillStyle = '#1B5E20';
+      for (let i = -1; i <= 1; i++) { ctx.fillRect(i * 9 - 2, -h/2, 5, h); }
+      // Dard.
+      ctx.fillStyle = '#33691E';
+      ctx.beginPath(); ctx.moveTo(-w/2, 0); ctx.lineTo(-w/2 - 9, -2); ctx.lineTo(-w/2 - 9, 2); ctx.fill();
+      // Goutte d'acide (petit cercle vert sous le corps).
+      ctx.fillStyle = '#B2FF59';
+      ctx.beginPath(); ctx.arc(-w/3, h/2 + 6, 3, 0, TAU); ctx.fill();
+      break;
+    }
+    case 'sporeCarrier': {
+      // Corps bombé vert foncé.
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.ellipse(0, 0, w/2, h/2, 0, 0, TAU); ctx.fill();
+      // 3 sacs de spores (cercles avec lueur).
+      const sacSpots = [[-w/4, -h/5], [w/5, -h/4], [0, h/4]];
+      for (const s of sacSpots) {
+        const sg = ctx.createRadialGradient(s[0], s[1], 1, s[0], s[1], 6);
+        sg.addColorStop(0, '#FFFFFF');
+        sg.addColorStop(0.5, e.accent);
+        sg.addColorStop(1, 'rgba(46,125,50,0)');
+        ctx.fillStyle = sg;
+        ctx.beginPath(); ctx.arc(s[0], s[1], 5, 0, TAU); ctx.fill();
+      }
+      // Antennes (2 lignes avec points).
+      ctx.strokeStyle = '#1B5E20'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-w/4, -h/2); ctx.quadraticCurveTo(-w/3, -h/2 - 10, -w/4 - 4, -h/2 - 16); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(w/4, -h/2); ctx.quadraticCurveTo(w/3, -h/2 - 10, w/4 + 4, -h/2 - 16); ctx.stroke();
+      ctx.fillStyle = '#B2FF59';
+      ctx.beginPath(); ctx.arc(-w/4 - 4, -h/2 - 16, 3, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(w/4 + 4, -h/2 - 16, 3, 0, TAU); ctx.fill();
+      // Petits yeux.
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath(); ctx.arc(-w/3, -h/6, 2.5, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(w/3, -h/6, 2.5, 0, TAU); ctx.fill();
+      break;
+    }
+    case 'stormGolem': {
+      // Corps massif gris-bleu (polygone).
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.moveTo(-w/2, -h/3); ctx.lineTo(-w/3, -h/2); ctx.lineTo(w/3, -h/2);
+      ctx.lineTo(w/2, -h/3); ctx.lineTo(w/2, h/2); ctx.lineTo(-w/2, h/2); ctx.closePath(); ctx.fill();
+      // Planches d'épaules.
+      ctx.fillStyle = '#455A64';
+      ctx.beginPath(); ctx.ellipse(-w/2, 0, 10, 16, 0, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(w/2, 0, 10, 16, 0, 0, TAU); ctx.fill();
+      // 2 éclairs jaunes (motifs en zigzag).
+      ctx.strokeStyle = e.accent; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(-w/4, -h/3); ctx.lineTo(-w/6, 0); ctx.lineTo(-w/4, h/3); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(w/4, -h/3); ctx.lineTo(w/6, 0); ctx.lineTo(w/4, h/3); ctx.stroke();
+      // Noyau ambre lumineux (dégradé radial).
+      const g = ctx.createRadialGradient(0, 0, 1, 0, 0, 12);
+      g.addColorStop(0, '#FFFFFF');
+      g.addColorStop(0.5, '#FFE082');
+      g.addColorStop(1, '#FF9800');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, 10, 0, TAU); ctx.fill();
+      break;
+    }
+    case 'lightningHornet': {
+      // Corps angulaire orange.
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.moveTo(-w/2, -h/4); ctx.lineTo(0, -h/2); ctx.lineTo(w/2, -h/4);
+      ctx.lineTo(w/2, h/4); ctx.lineTo(0, h/2); ctx.lineTo(-w/2, h/4); ctx.closePath(); ctx.fill();
+      // Arcs électriques jaunes (lignes en zigzag).
+      ctx.strokeStyle = e.accent; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-w/3, -h/4); ctx.lineTo(-w/5, 0); ctx.lineTo(-w/3, h/4); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(w/3, -h/4); ctx.lineTo(w/5, 0); ctx.lineTo(w/3, h/4); ctx.stroke();
+      // Accents bleu foncé.
+      ctx.fillStyle = '#1565C0';
+      ctx.beginPath(); ctx.moveTo(0, -h/2); ctx.lineTo(-w/4, -h/4); ctx.lineTo(0, -h/4); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(0, h/2); ctx.lineTo(w/4, h/4); ctx.lineTo(0, h/4); ctx.fill();
+      // Dard chargé.
+      ctx.fillStyle = '#FFF176';
+      ctx.beginPath(); ctx.moveTo(-w/2, 0); ctx.lineTo(-w/2 - 10, -3); ctx.lineTo(-w/2 - 10, 3); ctx.fill();
+      // Œil lumineux.
+      ctx.fillStyle = '#FFF176';
+      ctx.beginPath(); ctx.arc(0, 0, 4, 0, TAU); ctx.fill();
+      break;
+    }
+    case 'plasmaDrone': {
+      // Corps hexagonal bleu-gris foncé.
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      const r = w/2;
+      for (let i = 0; i < 6; i++) {
+        const a = i * TAU / 6 - TAU/12;
+        const px = Math.cos(a) * r, py = Math.sin(a) * h/2;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill();
+      // 2 ventilateurs de plasma jaunes (petits cercles).
+      ctx.fillStyle = e.accent;
+      ctx.beginPath(); ctx.arc(-w/4, -h/5, 4, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(-w/4, h/5, 4, 0, TAU); ctx.fill();
+      // Antenne.
+      ctx.strokeStyle = '#78909C'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0, -h/2); ctx.lineTo(0, -h/2 - 10); ctx.stroke();
+      ctx.fillStyle = '#FFEB3B';
+      ctx.beginPath(); ctx.arc(0, -h/2 - 10, 3, 0, TAU); ctx.fill();
+      // Moteur lumineux à l'arrière.
+      const g = ctx.createRadialGradient(-w/3, 0, 1, -w/3, 0, 6);
+      g.addColorStop(0, '#FFFFFF');
+      g.addColorStop(0.5, '#FFEB3B');
+      g.addColorStop(1, '#FF9800');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(-w/3, 0, 5, 0, TAU); ctx.fill();
+      break;
+    }
+    case 'frostWisp': {
+      // Corps cristallin bleu clair (forme losange).
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.moveTo(0, -h/2); ctx.lineTo(w/2, 0); ctx.lineTo(0, h/2); ctx.lineTo(-w/2, 0); ctx.closePath(); ctx.fill();
+      // Lueur intérieure (dégradé radial).
+      const g = ctx.createRadialGradient(0, 0, 1, 0, 0, w/3);
+      g.addColorStop(0, '#FFFFFF');
+      g.addColorStop(0.6, e.accent);
+      g.addColorStop(1, 'rgba(129,212,250,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, w/3, 0, TAU); ctx.fill();
+      // 2 éclats de glace pointus.
+      ctx.fillStyle = '#E1F5FE';
+      ctx.beginPath(); ctx.moveTo(-w/4, -h/2); ctx.lineTo(-w/4 - 6, -h/2 - 10); ctx.lineTo(-w/4 + 6, -h/2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(w/4, h/2); ctx.lineTo(w/4 + 6, h/2 + 10); ctx.lineTo(w/4 - 6, h/2); ctx.fill();
+      // Traînée de givre (petits points).
+      ctx.fillStyle = '#B3E5FC';
+      ctx.beginPath(); ctx.arc(-w/3, -h/4, 1.5, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(-w/4, h/5, 1.5, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(w/5, -h/3, 1.5, 0, TAU); ctx.fill();
+      break;
+    }
+    case 'iceGolem': {
+      // Corps cristallin bleu (polygone).
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.moveTo(-w/2, -h/3); ctx.lineTo(-w/3, -h/2); ctx.lineTo(w/3, -h/2);
+      ctx.lineTo(w/2, -h/3); ctx.lineTo(w/2, h/3); ctx.lineTo(w/3, h/2);
+      ctx.lineTo(-w/3, h/2); ctx.lineTo(-w/2, h/3); ctx.closePath(); ctx.fill();
+      // Fissures blanches de glace.
+      ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(-w/4, -h/4); ctx.lineTo(0, 0); ctx.lineTo(w/4, -h/5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-w/5, h/3); ctx.lineTo(w/5, h/4); ctx.stroke();
+      // Noyau gelé (cercle blanc).
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath(); ctx.arc(0, 0, 6, 0, TAU); ctx.fill();
+      const g = ctx.createRadialGradient(0, 0, 1, 0, 0, 10);
+      g.addColorStop(0, '#FFFFFF');
+      g.addColorStop(1, 'rgba(129,212,250,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, 10, 0, TAU); ctx.fill();
+      // 2 lames de glace (bras).
+      ctx.fillStyle = '#B3E5FC';
+      ctx.beginPath(); ctx.moveTo(-w/2, -h/4); ctx.lineTo(-w/2 - 14, -h/3); ctx.lineTo(-w/2, 0); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-w/2, h/4); ctx.lineTo(-w/2 - 14, h/3); ctx.lineTo(-w/2, 0); ctx.fill();
+      break;
+    }
+    case 'shardReaper': {
+      // Corps angulaire bleu foncé.
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.moveTo(-w/2, 0); ctx.lineTo(-w/3, -h/2); ctx.lineTo(w/3, -h/2);
+      ctx.lineTo(w/2, 0); ctx.lineTo(w/3, h/2); ctx.lineTo(-w/3, h/2); ctx.closePath(); ctx.fill();
+      // 3 éclats de glace en zigzag en haut.
+      ctx.fillStyle = '#E1F5FE';
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * 10 - 4, -h/2);
+        ctx.lineTo(i * 10, -h/2 - 12);
+        ctx.lineTo(i * 10 + 4, -h/2);
+        ctx.fill();
+      }
+      // Œil bleu lumineux.
+      const g = ctx.createRadialGradient(0, 0, 1, 0, 0, 7);
+      g.addColorStop(0, '#FFFFFF');
+      g.addColorStop(0.5, '#81D4FA');
+      g.addColorStop(1, e.color);
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, 6, 0, TAU); ctx.fill();
+      // Particules de givre.
+      ctx.fillStyle = '#B3E5FC';
+      ctx.beginPath(); ctx.arc(w/3, -h/4, 2, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(-w/4, h/3, 2, 0, TAU); ctx.fill();
+      break;
+    }
+    case 'voidBeast': {
+      // Corps biomecanique violet.
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.ellipse(0, 0, w/2, h/2, 0, 0, TAU); ctx.fill();
+      // Segments sombres.
+      ctx.fillStyle = '#4A148C';
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath(); ctx.ellipse(i * w/4, 0, w/8, h/2 - 3, 0, 0, TAU); ctx.fill();
+      }
+      // 2 ports verts lumineux.
+      ctx.fillStyle = '#00E676';
+      ctx.beginPath(); ctx.arc(-w/4, -h/4, 4, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(-w/4, h/4, 4, 0, TAU); ctx.fill();
+      // Tentacule arrière (courbe quadratique).
+      ctx.strokeStyle = '#4A148C'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(w/2, 0); ctx.quadraticCurveTo(w/2 + 20, 8, w/2 + 30, -6); ctx.stroke();
+      // Crête pointue.
+      ctx.fillStyle = '#7B1FA2';
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * 10 - 4, -h/2);
+        ctx.lineTo(i * 10, -h/2 - 12);
+        ctx.lineTo(i * 10 + 4, -h/2);
+        ctx.fill();
+      }
+      break;
+    }
+    case 'voidTentacle': {
+      // Corps allongé violet foncé.
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.ellipse(0, 0, w/2, h/3, 0, 0, TAU); ctx.fill();
+      // 3 tentacules qui ondulent (courbes quadratiques).
+      ctx.strokeStyle = '#7B1FA2'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(w/3, i * 8);
+        ctx.quadraticCurveTo(w/2 + 15, i * 12 + 6, w/2 + 28, i * 18);
+        ctx.stroke();
+      }
+      // Taches vertes.
+      ctx.fillStyle = '#00E676';
+      ctx.beginPath(); ctx.arc(-w/5, -h/5, 2.5, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(w/6, h/4, 2.5, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, -h/4, 2.5, 0, TAU); ctx.fill();
+      // Pointes griffues à l'extrémité des tentacules.
+      ctx.fillStyle = '#B388FF';
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath(); ctx.arc(w/2 + 28, i * 18, 3, 0, TAU); ctx.fill();
+      }
+      break;
+    }
+    case 'voidEye': {
+      // Corps rond violet.
+      ctx.fillStyle = e.color;
+      ctx.beginPath(); ctx.arc(0, 0, w/2.5, 0, TAU); ctx.fill();
+      // Grand œil vert lumineux (dégradé radial).
+      const g = ctx.createRadialGradient(0, 0, 1, 0, 0, 12);
+      g.addColorStop(0, '#FFFFFF');
+      g.addColorStop(0.4, '#00E676');
+      g.addColorStop(1, '#1B5E20');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, 11, 0, TAU); ctx.fill();
+      // Liseré mécanique autour de l'œil.
+      ctx.strokeStyle = '#4A148C'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, 13, 0, TAU); ctx.stroke();
+      // 4 petits tentacules.
+      ctx.strokeStyle = '#6A1B9A'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      const tentAngles = [0.4, 1.2, TAU - 0.4, TAU - 1.2];
+      for (const a of tentAngles) {
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * w/2.5, Math.sin(a) * w/2.5);
+        ctx.quadraticCurveTo(Math.cos(a) * (w/2.5 + 14), Math.sin(a) * (w/2.5 + 14) + 4, Math.cos(a) * (w/2.5 + 22), Math.sin(a) * (w/2.5 + 22) - 4);
+        ctx.stroke();
+      }
+      break;
+    }
+  }
+  // Barre de vie (toujours visible, sous l'ennemi).
+  const barW = w * 0.9, barH = 4;
+  const ratio = Math.max(0, e.hp / e.maxHp);
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(-barW/2, h/2 + 4, barW, barH);
+  ctx.fillStyle = ratio > 0.5 ? '#4CAF50' : (ratio > 0.25 ? '#FFD54F' : '#EF5350');
+  ctx.fillRect(-barW/2, h/2 + 4, barW * ratio, barH);
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-barW/2, h/2 + 4, barW, barH);
+  ctx.restore();
+}
+
+// Petit utilitaire : rectangle arrondi (chemin).
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// ============================================================
+// SECTION: Dessin — Boss (5 designs distincts)
+// ============================================================
+// Chaque boss a un visage Canvas 2D unique selon son thème :
+//  1. Magma Sentinel  : roche sombre + fissures de magma + cristaux
+//  2. Venom Stalker   : corps serpentin + tentacules + taches bioluminescentes
+//  3. Thunder Warden  : golem blindé + éclairs jaunes + cœur de charge
+//  4. Frost Reaper    : corps cristallin + éclats de glace + aurore
+//  5. Drake of the Void: dragon organique + crête + ports de canon verts
+// Tous : barre de HP (vert->jaune->rouge) + nom au-dessus.
+// ============================================================
+function drawBoss() {
+  if (!boss) return;
+  const b = boss;
+  ctx.save();
+  ctx.translate(b.x, b.y);
+
+  switch (state.level) {
+    case 1: drawMagmaSentinel(b); break;
+    case 2: drawVenomStalker(b); break;
+    case 3: drawThunderWarden(b); break;
+    case 4: drawFrostReaper(b); break;
+    default: drawDrakeVoid(b); break;
+  }
+  ctx.restore();
+  drawBossHUD(b);
+}
+
+// 1. Magma Sentinel — corps rocheux + fissures + cristaux + noyau fondu.
+function drawMagmaSentinel(b) {
+  const w = b.w, h = b.h;
+  const pulse = 0.6 + 0.4 * Math.sin(b.t * 0.08);
+  // Corps rocheux sombre.
+  ctx.fillStyle = '#3E2723';
+  ctx.beginPath();
+  ctx.moveTo(-w/2, -h/2 + 8); ctx.lineTo(-w/3, -h/2); ctx.lineTo(w/3, -h/2);
+  ctx.lineTo(w/2, -h/2 + 8); ctx.lineTo(w/2, h/3); ctx.lineTo(w/3, h/2);
+  ctx.lineTo(-w/3, h/2); ctx.lineTo(-w/2, h/3); ctx.closePath(); ctx.fill();
+  // Planches de blindage latérales.
+  ctx.fillStyle = '#4E342E';
+  ctx.fillRect(-w/2, -h/4, 12, h/2);
+  ctx.fillRect(w/2 - 12, -h/4, 12, h/2);
+  // Fissures de magma (courbes quadratiques) — pulsent.
+  ctx.strokeStyle = '#FF3D00'; ctx.lineWidth = 2.5; ctx.globalAlpha = pulse;
+  ctx.beginPath(); ctx.moveTo(-w/3, -h/4); ctx.quadraticCurveTo(0, 0, w/4, h/5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(w/5, -h/3); ctx.quadraticCurveTo(w/4, h/6, 0, h/3); ctx.stroke();
+  ctx.globalAlpha = 1;
+  // Cristaux en haut/bas.
+  ctx.fillStyle = '#FF5722';
+  ctx.beginPath(); ctx.moveTo(-w/4, -h/2); ctx.lineTo(-w/8, -h/2 - 14); ctx.lineTo(-w/6, -h/2); ctx.fill();
+  ctx.fillStyle = '#E64A19';
+  ctx.beginPath(); ctx.moveTo(w/4, h/2); ctx.lineTo(w/8, h/2 + 12); ctx.lineTo(w/6, h/2); ctx.fill();
+  // Noyau fondu avec lueur intérieure (dégradé radial).
+  const g = ctx.createRadialGradient(0, 0, 2, 0, 0, 26);
+  g.addColorStop(0, '#FFFFFF');
+  g.addColorStop(0.4, '#FFAB91');
+  g.addColorStop(1, '#FF3D00');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0, 0, 24, 0, TAU); ctx.fill();
+  ctx.globalAlpha = pulse * 0.5;
+  ctx.strokeStyle = '#FF5722'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(0, 0, 30, 0, TAU); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+// 2. Venom Stalker — serpentin + tentacules + taches + yeux + goutte.
+function drawVenomStalker(b) {
+  const w = b.w, h = b.h;
+  const sway = Math.sin(b.t * 0.06);
+  // 3 paires de tentacules courbes (quadratiques) qui ondulent.
+  ctx.strokeStyle = '#1B5E20'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  for (let i = -1; i <= 1; i++) {
+    ctx.beginPath();
+    ctx.moveTo(-w/4, i * 10);
+    ctx.quadraticCurveTo(-w/2 - 20, i * 10 + sway * 20, -w/2 - 40, i * 16);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(w/4, i * 10);
+    ctx.quadraticCurveTo(w/2 + 20, i * 10 - sway * 20, w/2 + 40, i * 16);
+    ctx.stroke();
+  }
+  // Corps serpentin (ellipse).
+  ctx.fillStyle = '#1B5E20';
+  ctx.beginPath(); ctx.ellipse(0, 0, w/2, h/2, 0, 0, TAU); ctx.fill();
+  // Tête.
+  ctx.fillStyle = '#2E7D32';
+  ctx.beginPath(); ctx.ellipse(-w/3, 0, w/5, h/3, 0, 0, TAU); ctx.fill();
+  // Crocs.
+  ctx.fillStyle = '#C8E6C9';
+  ctx.beginPath(); ctx.moveTo(-w/2, -4); ctx.lineTo(-w/2 + 12, 0); ctx.lineTo(-w/2, 4); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-w/2 + 8, -2); ctx.lineTo(-w/2 + 18, 0); ctx.lineTo(-w/2 + 8, 2); ctx.fill();
+  // 5 taches bioluminescentes.
+  ctx.fillStyle = '#76FF03';
+  const spots = [[6,-10],[18,4],[-2,14],[10,-18],[24,10]];
+  for (const s of spots) { ctx.beginPath(); ctx.arc(s[0], s[1], 3.5, 0, TAU); ctx.fill(); }
+  // Yeux lumineux.
+  ctx.fillStyle = '#B2FF59';
+  ctx.beginPath(); ctx.arc(-w/3 - 4, -6, 4, 0, TAU); ctx.fill();
+  // Goutte de venin.
+  ctx.fillStyle = '#76FF03';
+  ctx.beginPath(); ctx.arc(-w/2 - 2, h/2 + 6, 4, 0, TAU); ctx.fill();
+}
+
+// 3. Thunder Warden — golem blindé + éclairs + cœur de charge ambre.
+function drawThunderWarden(b) {
+  const w = b.w, h = b.h;
+  const zap = 0.5 + 0.5 * Math.sin(b.t * 0.2);
+  // Corps golem (polygone).
+  ctx.fillStyle = '#37474F';
+  ctx.beginPath();
+  ctx.moveTo(-w/2, -h/3); ctx.lineTo(-w/3, -h/2); ctx.lineTo(w/3, -h/2);
+  ctx.lineTo(w/2, -h/3); ctx.lineTo(w/2, h/2); ctx.lineTo(-w/2, h/2); ctx.closePath(); ctx.fill();
+  // Planches de blindage plus claires.
+  ctx.fillStyle = '#546E7A';
+  ctx.fillRect(-w/3, -h/4, w/1.5, h/3);
+  ctx.fillRect(-w/4, h/6, w/2, h/5);
+  // Épaules (pads).
+  ctx.fillStyle = '#455A64';
+  ctx.beginPath(); ctx.ellipse(-w/2, 0, 14, 22, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(w/2, 0, 14, 22, 0, 0, TAU); ctx.fill();
+  // Éclairs jaunes (motifs en zigzag).
+  ctx.strokeStyle = '#FFD54F'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-w/4, -h/3); ctx.lineTo(-w/8, -h/6); ctx.lineTo(-w/4, 0); ctx.lineTo(-w/8, h/6);
+  ctx.stroke();
+  ctx.strokeStyle = '#FFC107';
+  ctx.beginPath();
+  ctx.moveTo(w/4, -h/3); ctx.lineTo(w/8, -h/6); ctx.lineTo(w/4, 0); ctx.lineTo(w/8, h/6);
+  ctx.stroke();
+  // Arcs d'énergie (pulsent).
+  ctx.strokeStyle = '#FFEB3B'; ctx.lineWidth = 2; ctx.globalAlpha = zap;
+  ctx.beginPath(); ctx.moveTo(-w/2, -h/4); ctx.lineTo(-w/2 + 18, -h/2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(w/2, h/4); ctx.lineTo(w/2 - 18, h/2); ctx.stroke();
+  ctx.globalAlpha = 1;
+  // Cœur de charge ambre (dégradé).
+  const g = ctx.createRadialGradient(0, 0, 2, 0, 0, 22);
+  g.addColorStop(0, '#FFFFFF');
+  g.addColorStop(0.5, '#FFE082');
+  g.addColorStop(1, '#FF9800');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0, 0, 20, 0, TAU); ctx.fill();
+  ctx.globalAlpha = zap;
+  ctx.strokeStyle = '#FFEB3B'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(0, 0, 26, 0, TAU); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+// 4. Frost Reaper — corps cristallin + éclats de glace + aurore + noyau gelé.
+function drawFrostReaper(b) {
+  const w = b.w, h = b.h;
+  const aura = 0.3 + 0.2 * Math.sin(b.t * 0.05);
+  // Aurore froide (anneau).
+  ctx.fillStyle = 'rgba(41,182,246,0.4)';
+  ctx.beginPath(); ctx.arc(0, 0, w/2 + 18, 0, TAU); ctx.fill();
+  // Corps cristallin (polygone) + intérieur.
+  ctx.fillStyle = '#B3E5FC';
+  ctx.beginPath();
+  ctx.moveTo(-w/2, 0); ctx.lineTo(-w/3, -h/2); ctx.lineTo(0, -h/2 - 8);
+  ctx.lineTo(w/3, -h/2); ctx.lineTo(w/2, 0); ctx.lineTo(w/3, h/2);
+  ctx.lineTo(-w/3, h/2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#81D4FA';
+  ctx.beginPath();
+  ctx.moveTo(-w/3, 0); ctx.lineTo(-w/5, -h/3); ctx.lineTo(w/5, -h/3);
+  ctx.lineTo(w/3, 0); ctx.lineTo(w/5, h/3); ctx.lineTo(-w/5, h/3); ctx.closePath(); ctx.fill();
+  // Éclats de glace en haut (pointus).
+  ctx.fillStyle = '#E1F5FE';
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * 18, -h/2 - 8);
+    ctx.lineTo(i * 18 + 6, -h/2 - 24 - Math.abs(i) * -2);
+    ctx.lineTo(i * 18 + 12, -h/2 - 8);
+    ctx.fill();
+  }
+  // Lames de givre latérales.
+  ctx.fillStyle = '#4FC3F7';
+  ctx.beginPath(); ctx.moveTo(-w/2, 0); ctx.lineTo(-w/2 - 24, -10); ctx.lineTo(-w/2 - 24, 10); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(w/2, 0); ctx.lineTo(w/2 + 24, -10); ctx.lineTo(w/2 + 24, 10); ctx.fill();
+  // Noyau gelé (dégradé).
+  const g = ctx.createRadialGradient(0, 0, 2, 0, 0, 20);
+  g.addColorStop(0, '#FFFFFF');
+  g.addColorStop(0.6, '#81D4FA');
+  g.addColorStop(1, '#29B6F6');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0, 0, 18, 0, TAU); ctx.fill();
+  ctx.globalAlpha = aura;
+  ctx.strokeStyle = '#4FC3F7'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(0, 0, 24, 0, TAU); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+// 5. Drake of the Void — dragon organique + crête + tentacules + canons verts.
+function drawDrakeVoid(b) {
+  const w = b.w, h = b.h;
+  const glow = 0.6 + 0.4 * Math.sin(b.t * 0.1);
+  // Tentacules arrière.
+  ctx.strokeStyle = '#4A148C'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+  for (let i = -1; i <= 1; i++) {
+    ctx.beginPath();
+    ctx.moveTo(w/3, i * 14);
+    ctx.quadraticCurveTo(w/2 + 30, i * 14 + Math.sin(b.t*0.07+i)*10, w/2 + 60, i * 22);
+    ctx.stroke();
+  }
+  // Corps organique blindé (segments noirs + base violette).
+  ctx.fillStyle = '#9C27B0';
+  ctx.beginPath(); ctx.ellipse(0, 0, w/2, h/2, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#1E2335';
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath(); ctx.ellipse(i * (w/6), 0, w/10, h/2 - 4, 0, 0, TAU); ctx.fill();
+  }
+  // Crête dorsale pointue.
+  ctx.fillStyle = '#7B1FA2';
+  for (let i = -3; i <= 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * 14 - 6, -h/2);
+    ctx.lineTo(i * 14, -h/2 - 16);
+    ctx.lineTo(i * 14 + 6, -h/2);
+    ctx.fill();
+  }
+  // Pods de canon latéraux.
+  ctx.fillStyle = '#4A148C';
+  ctx.beginPath(); ctx.ellipse(-w/4, -h/2 - 6, 10, 8, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-w/4, h/2 + 6, 10, 8, 0, 0, TAU); ctx.fill();
+  // Ports de canon verts lumineux.
+  ctx.fillStyle = '#00E676';
+  ctx.beginPath(); ctx.arc(-w/4, -h/2 - 6, 4, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(-w/4, h/2 + 6, 4, 0, TAU); ctx.fill();
+  // Canon de faisceau nasal.
+  ctx.fillStyle = '#1E2335';
+  ctx.fillRect(-w/2 - 18, -8, 24, 16);
+  ctx.fillStyle = '#00E676'; ctx.globalAlpha = glow;
+  ctx.beginPath(); ctx.arc(-w/2 - 18, 0, 6, 0, TAU); ctx.fill();
+  ctx.globalAlpha = 1;
+  // Yeux verts menaçants.
+  ctx.fillStyle = '#00E676';
+  ctx.beginPath(); ctx.arc(-w/6, -8, 4, 0, TAU); ctx.fill();
+}
+
+// Barre de HP + nom du boss (vert -> jaune -> rouge selon le ratio).
+function drawBossHUD(b) {
+  const ratio = Math.max(0, b.hp / b.maxHp);
+  const bw = 220, bx = W/2 - bw/2, by = 44;
+  // Couleur interpolée selon la vie.
+  let col;
+  if (ratio > 0.5) col = '#4CAF50';
+  else if (ratio > 0.25) col = '#FFEB3B';
+  else col = '#F44336';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(bx - 3, by - 3, bw + 6, 12);
+  ctx.fillStyle = col;
+  ctx.fillRect(bx, by, bw * ratio, 6);
+  // Nom au-dessus.
+  ctx.fillStyle = '#EAF2FF';
+  ctx.font = 'bold 16px "Segoe UI", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(b.name, W/2, by - 8);
+  ctx.textAlign = 'start';
+}
+
+// ============================================================
+// SECTION: Dessin — UI, particules, HUD
+// ============================================================
+// Dessine les projectiles, bonus, particules et met à jour le HUD DOM.
+// ============================================================
+function drawBullets() {
+  for (const b of bullets) {
+    ctx.fillStyle = '#7C4DFF';
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#E8F1FF';
+    ctx.beginPath(); ctx.arc(b.x + 1, b.y, b.r * 0.4, 0, TAU); ctx.fill();
+  }
+}
+function drawEnemyBullets() {
+  for (const b of enemyBullets) {
+    ctx.fillStyle = b.color || '#FF5252';
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#FFFFFF'; ctx.globalAlpha = 0.6;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.35, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+function drawPowerups() {
+  for (const p of powerups) {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(state.time * 0.05);
+    const isShield = p.type === 'shield';
+    ctx.fillStyle = isShield ? '#4FC3F7' : '#FF9800';
+    roundRect(-p.r, -p.r, p.r*2, p.r*2, 6); ctx.fill();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 14px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(isShield ? 'S' : 'R', 0, 1);
+    ctx.restore();
+  }
+  ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+}
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+// Met à jour les valeurs du HUD (DOM) — score / niveau / vies.
+function updateHUD() {
+  document.getElementById('hud-score').textContent = state.score;
+  document.getElementById('hud-level').textContent = state.level;
+  document.getElementById('hud-lives').textContent = '♥'.repeat(Math.max(0, state.lives));
+}
+
+// ============================================================
+// SECTION: Boucle de jeu
+// ============================================================
+// requestAnimationFrame : update() puis draw(). Le spawner (maybeSpawn)
+// est appelé avant update pour gérer les spawns du niveau. draw() peint
+// dans l'ordre : fond/étoiles -> bonus -> ennemis -> boss -> projectiles
+// -> joueur -> particules.
+// ============================================================
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  // Fond dégradé spatial.
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#0A0E1A');
+  bg.addColorStop(0.5, '#0D1428');
+  bg.addColorStop(1, '#0A0E1A');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  drawStars();
+  drawPowerups();
+  for (const e of enemies) { if (!e.dead) drawEnemy(e); }
+  drawBoss();
+  drawBullets();
+  drawEnemyBullets();
+  if (player) drawPlayer();
+  drawParticles();
+}
+
+// Boucle principale : spawn -> update -> draw.
+function mainLoop() {
+  if (state.running) maybeSpawn();
+  update();
+  draw();
+  requestAnimationFrame(mainLoop);
+}
+
+// ============================================================
+// SECTION: Gestion des événements & démarrage
+// ============================================================
+// Démarrage / redémarrage du jeu, fin de partie (game over / victoire),
+// et câblage des boutons HTML. L'audio est initialisé au premier clic.
+// ============================================================
+function resetGame() {
+  state.score = 0;
+  state.lives = 3;
+  state.level = 1;
+  state.kills = 0;
+  state.time = 0;
+  state.running = true;
+  state.over = false;
+  state.victory = false;
+  player = makePlayer();
+  bullets = [];
+  enemyBullets = [];
+  enemies = [];
+  boss = null;
+  particles = [];
+  powerups = [];
+  playerShield = 0;
+  playerRapid = 0;
+  playerFireTimer = 0;
+  bossFireTimer = 60;
+  spawnTimer = 0;
+  setMusicLevel(1);
+  updateHUD();
+}
+
+// Plein écran — tente d'activer le Fullscreen API sur le document.
+// Compatible WebKit (Safari/iOS) et standard.
+function requestFullscreenSafe() {
+  const el = document.documentElement;
+  const fn = el.requestFullscreen || el.webkitRequestFullscreen ||
+             el.mozRequestFullScreen || el.msRequestFullscreen;
+  if (fn) {
+    try { fn.call(el); } catch(e) {}
+  }
+}
+
+function startGame() {
+  initAudio();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  resetGame();
+  startMusic();
+  requestFullscreenSafe();
+  document.getElementById('start-overlay').classList.add('hidden');
+  document.getElementById('over-overlay').classList.add('hidden');
+  document.getElementById('win-overlay').classList.add('hidden');
+}
+
+function endGame(victory) {
+  state.running = false;
+  state.over = !victory;
+  state.victory = victory;
+  stopMusic();
+  if (victory) {
+    document.getElementById('win-text').textContent =
+      'Vous avez vaincu le Drake of the Void ! Score final : ' + state.score;
+    document.getElementById('win-overlay').classList.remove('hidden');
+  } else {
+    document.getElementById('over-text').textContent =
+      'Votre vaisseau a été détruit. Score final : ' + state.score;
+    document.getElementById('over-overlay').classList.remove('hidden');
+  }
+}
+
+// Câblage des boutons (Jouer / Rejouer / Rejouer).
+document.getElementById('btn-start').addEventListener('click', startGame);
+document.getElementById('btn-restart').addEventListener('click', startGame);
+document.getElementById('btn-again').addEventListener('click', startGame);
+
+// Spawner d'ennemis pendant le niveau (avant le boss) :
+// un ennemi toutes les ~1.2s, max 6 à l'écran ; à 20 kills, le boss arrive.
+let spawnTimer = 0;
+const SPAWN_INTERVAL = 70; // frames entre deux spawns (~1.2s à 60fps)
+
+function maybeSpawn() {
+  if (!state.running || boss) return;
+  spawnTimer++;
+  if (spawnTimer >= SPAWN_INTERVAL) {
+    spawnTimer = 0;
+    if (enemies.length < 6) spawnEnemy();
+  }
+  if (state.kills >= state.killsPerLevel) spawnBoss();
+}
+
+// Initialisation + démarrage de la boucle.
+initStars();
+requestAnimationFrame(mainLoop);
+
+</script>
+</body>
+</html>
